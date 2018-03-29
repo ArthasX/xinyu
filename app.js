@@ -16,8 +16,8 @@ var app = express();
 /**
  * 设置模板解析
  */
-app.set('view engine', '.hbs');
-
+// app.set('view engine', '.hbs');
+app.set('view engine', 'jade');
 /**
  * 中间件
  */
@@ -25,7 +25,7 @@ app.use(compression());
 app.use(favicon(__dirname + '/public/favicon.ico'));
 app.use(logger.access());
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.urlencoded({extended: false}));
 app.use(validator());
 app.use(cookieParser());
 app.use(session.check(), session.init());
@@ -34,6 +34,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 /**
  * 转给 Roter 处理路由
  */
+
 app.use(router);
 
 /**
@@ -44,4 +45,7 @@ app.use(errors);
 /**
  * 导出 APP
  */
+
+
+
 module.exports = app;
