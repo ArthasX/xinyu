@@ -19,36 +19,36 @@ var categoriesModel = require('../models/categories.model');
  * @param {Function} callback
  */
 exports.query = function (options, callback) {
-  if (!options.query) {
-    var err = {
-      type: 'system',
-      error: '没有 query 传入'
-    };
+    if (!options.query) {
+        var err = {
+            type: 'system',
+            error: '没有 query 传入'
+        };
 
-    return callback(err);
-  }
-
-  var query = options.query;
-
-  mediaModel.find(query)
-    .select('fileName description date size quotes src')
-    .exec(function (err, media) {
-      if (err) {
-        err.type = 'database';
         return callback(err);
-      }
+    }
 
-      media = _.map(media, function (medium) {
-        var src = medium.src;
+    var query = options.query;
 
-        medium = medium.toObject();
-        medium.src = src;
+    mediaModel.find(query)
+        .select('fileName description date size quotes src')
+        .exec(function (err, media) {
+            if (err) {
+                err.type = 'database';
+                return callback(err);
+            }
 
-        return medium;
-      });
+            media = _.map(media, function (medium) {
+                var src = medium.src;
 
-      callback(null, media);
-    });
+                medium = medium.toObject();
+                medium.src = src;
+
+                return medium;
+            });
+
+            callback(null, media);
+        });
 };
 
 /**
@@ -59,56 +59,56 @@ exports.query = function (options, callback) {
  * @param {Function} callback
  */
 exports.list = function (options, callback) {
-  var currentPage = 1;
-  var pageSize = 50;
+    var currentPage = 1;
+    var pageSize = 50;
 
-  if (options.currentPage) currentPage = parseInt(options.currentPage);
-  if (options.pageSize) pageSize = parseInt(options.pageSize);
+    if (options.currentPage) currentPage = parseInt(options.currentPage);
+    if (options.pageSize) pageSize = parseInt(options.pageSize);
 
-  async.waterfall([
-    function (callback) {
-      mediaModel.count({}, function (err, count) {
-        if (err) return callback(err);
+    async.waterfall([
+        function (callback) {
+            mediaModel.count({}, function (err, count) {
+                if (err) return callback(err);
 
-        if (count) {
-          callback(null, count);
-        } else {
-          callback(null, null);
+                if (count) {
+                    callback(null, count);
+                } else {
+                    callback(null, null);
+                }
+            });
+        },
+        function (count, callback) {
+            mediaModel.find({})
+                .sort('-date')
+                .skip((currentPage - 1) * pageSize)
+                .limit(pageSize)
+                .select('fileName description date size quotes src')
+                .exec(function (err, media) {
+                    if (err) {
+                        err.type = 'database'
+                        return callback(err);
+                    }
+
+                    media = _.map(media, function (medium) {
+                        var src = medium.src;
+
+                        medium = medium.toObject();
+                        medium.src = src;
+
+                        return medium;
+                    });
+
+                    callback(null, count, media);
+                });
         }
-      });
-    },
-    function (count, callback) {
-      mediaModel.find({})
-        .sort('-date')
-        .skip((currentPage - 1) * pageSize)
-        .limit(pageSize)
-        .select('fileName description date size quotes src')
-        .exec(function (err, media) {
-          if (err) {
-            err.type = 'database'
-            return callback(err);
-          }
+    ], function (err, count, media) {
+        var result = {
+            media: media,
+            pages: Math.ceil(count / pageSize)
+        };
 
-          media = _.map(media, function (medium) {
-            var src = medium.src;
-
-            medium = medium.toObject();
-            medium.src = src;
-
-            return medium;
-          });
-
-          callback(null, count, media);
-        });
-    }
-  ], function (err, count, media) {
-    var result = {
-      media: media,
-      pages: Math.ceil(count / pageSize)
-    };
-
-    callback(err, result);
-  });
+        callback(err, result);
+    });
 };
 
 /**
@@ -120,121 +120,142 @@ exports.list = function (options, callback) {
  * @param {Function} callback
  */
 exports.save = function (options, callback) {
-  if (options._id && !options.data) {
-    var err = {
-      type: 'system',
-      error: '没有 data 传入'
-    };
-
-    return callback(err);
-  }
-
-  if (!options._id && !options.req) {
-    var err = {
-      type: 'system',
-      error: '没有 req 传入'
-    };
-
-    return callback(err);
-  }
-
-  var req = options.req;
-
-  if (options._id) {
-    var data = options.data;
-    var _id = options._id;
-
-    async.waterfall([
-      function (callback) {
-        mediaModel.findByIdAndUpdate({ _id: _id }, data, { runValidators: true }, function (err, oldMedium) {
-          if (err) err.type = 'database';
-
-          callback(err, oldMedium);
-        });
-      },
-      function (oldMedium, callback) {
-        if (data.fileName !== oldMedium.fileName) {
-          var prePath = '../../public/media/' + moment(oldMedium.date).format('YYYYMM') + '/' + oldMedium._id + '/';
-          var oldPath = path.join(__dirname, prePath + oldMedium.fileName);
-          var newPath = path.join(__dirname, prePath + data.fileName);
-
-          fs.rename(oldPath, newPath, function (err) {
-            if (err) err.type = 'system';
-
-            callback(err);
-          });
-        } else {
-          callback(null);
-        }
-      }
-    ], callback);
-  } else {
-    async.auto({
-      // 解析传进的文件
-      formParse: function (callback) {
-        var form = new formidable.IncomingForm();
-        form.encoding = 'utf-8';
-        form.uploadDir = 'tmp';
-        form.keepExtensions = false;
-        form.maxFieldsSize = 10 * 1024 * 1024; // 10MB
-        form.multiples = false;
-
-        form.parse(req, function (err, fields, data) {
-          if (err) {
-            err.type = 'system';
-            callback(err);
-          }
-
-          callback(null, data.file);
-        });
-      },
-      // 存储进数据库
-      saveModel: ['formParse', function (callback, results) {
-        var medium = {
-          type: results.formParse.type,
-          fileName: results.formParse.name,
-          date: results.formParse.lastModifiedDate,
-          size: results.formParse.size
+    if (options._id && !options.data) {
+        var err = {
+            type: 'system',
+            error: '没有 data 传入'
         };
 
-        new mediaModel(medium).save(function (err, medium) {
-          if (err) err.type = 'database';
+        return callback(err);
+    }
 
-          callback(err, medium);
+    if (!options._id && !options.req) {
+        var err = {
+            type: 'system',
+            error: '没有 req 传入'
+        };
+
+        return callback(err);
+    }
+
+    var req = options.req;
+
+    if (options._id) {
+        var data = options.data;
+        var _id = options._id;
+
+        async.waterfall([
+            function (callback) {
+                mediaModel.findByIdAndUpdate({_id: _id}, data, {runValidators: true}, function (err, oldMedium) {
+                    if (err) err.type = 'database';
+
+                    callback(err, oldMedium);
+                });
+            },
+            function (oldMedium, callback) {
+                if (data.fileName !== oldMedium.fileName) {
+                    var prePath = '../../public/media/' + moment(oldMedium.date).format('YYYYMM') + '/' + oldMedium._id + '/';
+                    var oldPath = path.join(__dirname, prePath + oldMedium.fileName);
+                    var newPath = path.join(__dirname, prePath + data.fileName);
+
+                    fs.rename(oldPath, newPath, function (err) {
+                        if (err) err.type = 'system';
+
+                        callback(err);
+                    });
+                    prePath = '/OpenCMS/public/media/' + moment(oldMedium.date).format('YYYYMM') + '/' + oldMedium._id + '/';
+                    oldPath = path.join(path.dirname(path.dirname(__dirname)), prePath + oldMedium.fileName);
+                    newPath = path.join(path.dirname(path.dirname(__dirname)), prePath + data.fileName);
+
+                    fs.rename(oldPath, newPath, function (err) {
+                        if (err) err.type = 'system';
+
+                        callback(err);
+                    });
+                } else {
+                    callback(null);
+                }
+            }
+        ], callback);
+    } else {
+        async.auto({
+            // 解析传进的文件
+            formParse: function (callback) {
+                var form = new formidable.IncomingForm();
+                form.encoding = 'utf-8';
+                form.uploadDir = 'tmp';
+                form.keepExtensions = false;
+                form.maxFieldsSize = 10 * 1024 * 1024; // 10MB
+                form.multiples = false;
+
+                form.parse(req, function (err, fields, data) {
+                    if (err) {
+                        err.type = 'system';
+                        callback(err);
+                    }
+
+                    callback(null, data.file);
+                });
+            },
+            // 存储进数据库
+            saveModel: ['formParse', function (callback, results) {
+                var medium = {
+                    type: results.formParse.type,
+                    fileName: results.formParse.name,
+                    date: results.formParse.lastModifiedDate,
+                    size: results.formParse.size
+                };
+
+                new mediaModel(medium).save(function (err, medium) {
+                    if (err) err.type = 'database';
+
+                    callback(err, medium);
+                });
+            }],
+            // 创建文件夹
+            mkdirFolder: ['saveModel', function (callback, results) {
+                var folder = '../../public/media/' + moment(results.saveModel.date).format('YYYYMM') + '/' + results.saveModel._id;
+
+                mkdirp(path.join(__dirname, folder), function (err) {
+                    if (err) err.type = 'system';
+                    var folderOpenCMS = '/OpenCMS/public/media/' + moment(results.saveModel.date).format('YYYYMM') + '/' + results.saveModel._id;
+                    mkdirp(path.join(__dirname, '../../../', folderOpenCMS), function (err) {
+                        if (err) err.type = 'system';
+                        callback(null, folder);
+                    });
+                });
+            }],
+            // 移动文件
+            moveFileOrCompressImage: ['formParse', 'saveModel', 'mkdirFolder', function (callback, results) {
+                var fileName = results.saveModel.fileName;
+                var src = path.join(__dirname, '../../' + results.formParse.path);
+                var dest = path.join(__dirname, results.mkdirFolder + '/' + fileName);
+
+                fs.rename(src, dest, function (err) {
+                    if (err) {
+                        err.type = 'system';
+                        return callback(err);
+                    }
+                    var folder = '/OpenCMS/public/media/' + moment(results.saveModel.date).format('YYYYMM') + '/' + results.saveModel._id;
+                    var destOpenCMS = path.join(__dirname, "../../../", folder, fileName);
+                    console.log(dest, destOpenCMS);
+                    copy(dest, destOpenCMS);
+
+                    callback();
+                });
+
+            }]
+        }, function (err, results) {
+            if (err) return callback(err);
+
+            var medium = {
+                _id: results.saveModel._id,
+                src: results.saveModel.src
+            };
+
+            callback(null, medium);
         });
-      }],
-      // 创建文件夹
-      mkdirFolder: ['saveModel', function (callback, results) {
-        var folder = '../../public/media/' + moment(results.saveModel.date).format('YYYYMM') + '/' + results.saveModel._id;
-
-        mkdirp(path.join(__dirname, folder), function (err) {
-          if (err) err.type = 'system';
-
-          callback(null, folder);
-        });
-      }],
-      // 移动文件
-      moveFileOrCompressImage: ['formParse', 'saveModel', 'mkdirFolder', function (callback, results) {
-        fs.rename(path.join(__dirname, '../../' + results.formParse.path), path.join(__dirname, results.mkdirFolder + '/' + results.saveModel.fileName), function (err) {
-          if (err) {
-            err.type = 'system';
-            return callback(err);
-          }
-
-          callback(null);
-        });
-      }]
-    }, function (err, results) {
-      if (err) return callback(err);
-
-      var medium = {
-        _id: results.saveModel._id,
-        src: results.saveModel.src
-      };
-
-      callback(null, medium);
-    });
-  }
+    }
 };
 
 /**
@@ -244,84 +265,84 @@ exports.save = function (options, callback) {
  * @param {Function} callback
  */
 exports.remove = function (options, callback) {
-  if (!options._id) {
-    var err = {
-      type: 'system',
-      error: '没有 _id 传入'
-    };
+    if (!options._id) {
+        var err = {
+            type: 'system',
+            error: '没有 _id 传入'
+        };
 
-    return callback(err);
-  }
+        return callback(err);
+    }
 
-  var _id = options._id;
+    var _id = options._id;
 
-  mediaModel
-    .findById(_id)
-    .lean()
-    .exec(function (err, medium) {
-      if (!medium) return callback();
+    mediaModel
+        .findById(_id)
+        .lean()
+        .exec(function (err, medium) {
+            if (!medium) return callback();
 
-      async.auto({
-        pullQuotes: function (callback) {
-          async.parallel([
-            // 删除内容中的媒体引用
-            function (callback) {
-              contentsModel.update({ media: _id }, { $pull: { media: _id } }, {
-                multi: true, runValidators: true
-              }, callback);
-            },
-            // 删除内容中的缩略图引用
-            function (callback) {
-              contentsModel.update({ thumbnail: _id }, { $unset: { thumbnail: true } }, {
-                multi: true, runValidators: true
-              }, callback);
-            },
-            // 删除单页中的媒体引用
-            function (callback) {
-              categoriesModel.update({ 'mixed.pageMedia': _id }, { $pull: { 'mixed.media': _id } }, {
-                multi: true, runValidators: true
-              }, callback);
-            },
-            // 删除推荐中的媒体引用
-            function (callback) {
-              featuresModel.update({ media: _id }, { $pull: { media: _id } }, {
-                multi: true, runValidators: true
-              }, callback);
-            },
-            // 删除推荐中的缩略图引用
-            function (callback) {
-              featuresModel.update({ thumbnail: _id }, { $unset: { thumbnail: true } }, {
-                multi: true, runValidators: true
-              }, callback);
-            }
-          ], function (err) {
-            if (err) err.type = 'database';
+            async.auto({
+                pullQuotes: function (callback) {
+                    async.parallel([
+                        // 删除内容中的媒体引用
+                        function (callback) {
+                            contentsModel.update({media: _id}, {$pull: {media: _id}}, {
+                                multi: true, runValidators: true
+                            }, callback);
+                        },
+                        // 删除内容中的缩略图引用
+                        function (callback) {
+                            contentsModel.update({thumbnail: _id}, {$unset: {thumbnail: true}}, {
+                                multi: true, runValidators: true
+                            }, callback);
+                        },
+                        // 删除单页中的媒体引用
+                        function (callback) {
+                            categoriesModel.update({'mixed.pageMedia': _id}, {$pull: {'mixed.media': _id}}, {
+                                multi: true, runValidators: true
+                            }, callback);
+                        },
+                        // 删除推荐中的媒体引用
+                        function (callback) {
+                            featuresModel.update({media: _id}, {$pull: {media: _id}}, {
+                                multi: true, runValidators: true
+                            }, callback);
+                        },
+                        // 删除推荐中的缩略图引用
+                        function (callback) {
+                            featuresModel.update({thumbnail: _id}, {$unset: {thumbnail: true}}, {
+                                multi: true, runValidators: true
+                            }, callback);
+                        }
+                    ], function (err) {
+                        if (err) err.type = 'database';
 
-            callback(err);
-          });
-        },
-        removeMedium: function (callback) {
-          mediaModel.findByIdAndRemove(_id, function (err, oldMedium) {
-            if (err) err.type = 'database';
+                        callback(err);
+                    });
+                },
+                removeMedium: function (callback) {
+                    mediaModel.findByIdAndRemove(_id, function (err, oldMedium) {
+                        if (err) err.type = 'database';
 
-            callback(err, oldMedium);
-          });
-        },
-        unlinkFile: ['removeMedium', function (callback, results) {
-          var fileFolder = '../../public/media/' + moment(results.removeMedium.date).format('YYYYMM') + '/' + results.removeMedium._id;
+                        callback(err, oldMedium);
+                    });
+                },
+                unlinkFile: ['removeMedium', function (callback, results) {
+                    var fileFolder = '../../public/media/' + moment(results.removeMedium.date).format('YYYYMM') + '/' + results.removeMedium._id;
 
-          rimraf(path.join(__dirname, fileFolder), function (err) {
-            if (err) err.type = 'system';
+                    rimraf(path.join(__dirname, fileFolder), function (err) {
+                        if (err) err.type = 'system';
 
-            callback(err);
-          });
-        }]
-      }, function (err) {
-        if (err) return callback(err);
+                        callback(err);
+                    });
+                }]
+            }, function (err) {
+                if (err) return callback(err);
 
-        callback();
-      });
-    });
+                callback();
+            });
+        });
 };
 
 /**
@@ -329,12 +350,22 @@ exports.remove = function (options, callback) {
  * @param {Function} callback
  */
 exports.total = function (callback) {
-  mediaModel.count({}, function (err, count) {
-    if (err) {
-      err.type = 'database';
-      return callback(err);
-    }
+    mediaModel.count({}, function (err, count) {
+        if (err) {
+            err.type = 'database';
+            return callback(err);
+        }
 
-    callback(null, count);
-  });
+        callback(null, count);
+    });
 };
+
+
+function copy(src, dst) {
+    try {
+        fs.writeFileSync(dst, fs.readFileSync(src));
+    }
+    catch (err) {
+        console.log("file copy error", err)
+    }
+}
