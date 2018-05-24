@@ -59,7 +59,7 @@ angular.module('controllers').controller('install', ['$scope', '$state', '$http'
         user: $scope.databaseUser,
         pass: $scope.databasePassword
       };
-
+      console.log(data)
       $http.put('/api/install/test-database', data)
         .then(function () {
           $scope.transmitting = false;
